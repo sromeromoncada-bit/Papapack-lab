@@ -1,0 +1,168 @@
+<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b6e4f"><title>PAPAPACK Lab Assistant</title>
+<style>
+:root{--bg:#f4f7f5;--c:#fff;--t:#14211b;--m:#5b6b63;--p:#0b6e4f;--pt:#fff;--b:#cfd9d3;--w:#b45309;--e:#b91c1c}
+[data-theme=dark]{--bg:#0e1512;--c:#17211c;--t:#e8f1ec;--m:#9db0a6;--p:#34d399;--pt:#06241a;--b:#2b3a33;--w:#fbbf24;--e:#f87171}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--t);font:17px/1.4 system-ui,sans-serif;padding-bottom:84px}
+header{background:var(--p);color:var(--pt);padding:14px 16px;padding-top:max(14px,env(safe-area-inset-top));font-weight:700;font-size:19px}
+main{padding:12px;max-width:720px;margin:auto}
+.card{background:var(--c);border:1px solid var(--b);border-radius:14px;padding:14px;margin-bottom:12px}
+h3{margin:0 0 8px}small,.m{color:var(--m)}
+button,select,input,textarea{font:inherit;color:var(--t);background:var(--c);border:2px solid var(--b);border-radius:12px;padding:12px;min-height:48px;width:100%;margin:4px 0}
+button{background:var(--p);color:var(--pt);border:0;font-weight:700}button.s{background:var(--c);color:var(--t);border:2px solid var(--b)}button.d{background:var(--e);color:#fff}
+.r{display:flex;gap:8px}.r>*{flex:1}.g2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--c);border-top:1px solid var(--b);padding-bottom:env(safe-area-inset-bottom)}
+nav button{background:none;color:var(--m);border-radius:0;margin:0;font-size:12px;padding:8px 2px}nav button.on{color:var(--p)}nav span{display:block;font-size:22px}
+.bar{height:14px;background:var(--b);border-radius:9px;overflow:hidden}.bar i{display:block;height:100%;background:var(--p)}
+table{width:100%;border-collapse:collapse;font-size:15px}td,th{padding:6px 4px;border-bottom:1px solid var(--b);text-align:left}td input{padding:6px;min-height:36px;margin:0}
+.al{border-left:5px solid var(--w);padding:6px 10px;margin:6px 0;background:rgba(251,191,36,.12);border-radius:6px}.er{border-color:var(--e);background:rgba(248,113,113,.14)}
+#toast{position:fixed;top:70px;left:12px;right:12px;background:var(--t);color:var(--bg);padding:12px;border-radius:12px;display:none;z-index:9;text-align:center}
+.big{font-size:44px;font-weight:800;text-align:center}.ok{color:var(--p)}
+</style></head><body>
+<header>🧪 PAPAPACK Lab Assistant <small id="eqh" style="color:inherit;opacity:.85;font-weight:400"></small></header>
+<div id="toast"></div><main id="main"></main>
+<nav id="nav"></nav>
+<script src="https://unpkg.com/html5-qrcode"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+const $=s=>document.querySelector(s),e=x=>String(x??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+/* ---------- Almacenamiento: IndexedDB + fallback localStorage ---------- */
+const idb=()=>new Promise((ok,no)=>{const r=indexedDB.open('papapack',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>ok(r.result);r.onerror=no});
+async function load(){try{const d=await idb();return await new Promise((ok,no)=>{const q=d.transaction('kv').objectStore('kv').get('db');q.onsuccess=()=>ok(q.result);q.onerror=no})}catch(x){const s=localStorage.getItem('db');return s?JSON.parse(s):null}}
+async function save(){try{await idb().then(d=>d.transaction('kv','readwrite').objectStore('kv').put(db,'db'))}catch(x){try{localStorage.setItem('db',JSON.stringify(db))}catch(y){toast('⚠️ No se pudo guardar')}}}
+/* ---------- Datos iniciales ---------- */
+// pct = g de reactivo por 100 g de almidón base (dens en g/mL para convertir a mL)
+const REAC=[
+['Almidón de papa','g','matriz',100,0,'10-30 g','Polvo fino: usar mascarilla'],
+['Almidón de plátano','g','matriz',100,0,'10-30 g','Polvo fino: usar mascarilla'],
+['Agua desionizada','mL','solvente',1000,1,'10-20 mL/g almidón','—'],
+['Ácido acético','mL','regulador pH / reticulante',5,1.05,'3-8 g/100 g almidón','Corrosivo y vapores: usar campana'],
+['Glicerina','mL','plastificante',30,1.26,'20-40 g/100 g','Baja toxicidad'],
+['Sorbitol','g','plastificante',20,0,'15-30 g/100 g','—'],
+['Ácido cítrico','g','compatibilizador',5,0,'2-10 g/100 g','Irritante ocular'],
+['Anhídrido maleico','g','compatibilizador',3,0,'1-5 g/100 g','Corrosivo y sensibilizante: campana, guantes de nitrilo'],
+['Nanocelulosa','g','refuerzo',3,0,'1-5 g/100 g','Evitar inhalación'],
+['Cáscara hidrolizada (papa/plátano)','g','refuerzo',10,0,'5-15 g/100 g','—']
+].map((r,i)=>({id:'REAC-'+String(i+1).padStart(3,'0'),nombre:r[0],unidad:r[1],funcion:r[2],pct:r[3],dens:r[4],rango:r[5],precauciones:r[6]}));
+const P=(n,t,d,du,tp,rpm,ph,al)=>({num:n,titulo:t,descripcion:d,duracion:du,parametros:{temp:tp,rpm,ph},alertas:al||[]});
+const SEED=()=>({equipos:[{id:'REACTOR-001',nombre:'Biorreactor EAN',tipo:'reactor',ubicacion:'Lab Calle 74',protocoloId:'PROT-001'}],
+protocolos:[{id:'PROT-001',equipoId:'REACTOR-001',nombre:'Síntesis de biopolímero base',pasos:[
+P(1,'Verificar válvulas y EPP','Revisar válvulas, sellos y sensores. Ponerse bata, guantes y gafas.',5,null,0,null,['Válvula inferior cerrada','EPP completo']),
+P(2,'Cargar agua y almidón','Agregar agua desionizada y el almidón base según la tabla de formulación.',10,null,50,null,[]),
+P(3,'Gelatinización','Calentar con agitación constante hasta gelatinizar.',15,80,100,null,['Superficie caliente','No superar 130 °C / 30 PSI']),
+P(4,'Ajuste de pH','Agregar ácido acético gota a gota hasta pH objetivo.',10,63,100,5.0,['Ácido acético: vapores, usar campana']),
+P(5,'Adición de plastificante y aditivos','Agregar glicerina/sorbitol y aditivos de la formulación.',10,63,100,5.0,[]),
+P(6,'Reacción de polimerización','Mantener condiciones. Revisar pH cada 15 min.',60,63,100,5.0,['Revisar pH cada 15 min']),
+P(7,'Enfriamiento y descarga','Enfriar por debajo de 40 °C antes de abrir y descargar.',20,null,30,null,['No abrir con presión'])]}],
+reactivos:REAC,practicas:[],cfg:{operador:'',rol:'Practicante',dark:false}});
+let db,S={tab:'scan',eq:null,prot:null,run:null,form:{base:20,items:[['REAC-001',100],['REAC-003',1000],['REAC-004',5],['REAC-005',30]]},cond:{temp:63,rpm:100,ph:5,psi:0},lect:[],fil:{eq:'',res:'',f:''},sel:null};
+/* ---------- Utilidades ---------- */
+function toast(m){const t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(toast.h);toast.h=setTimeout(()=>t.style.display='none',3500)}
+function beep(){try{const a=new (window.AudioContext||webkitAudioContext)(),o=a.createOscillator();o.connect(a.destination);o.frequency.value=880;o.start();setTimeout(()=>{o.stop();a.close()},250)}catch(x){}}
+function notify(m){beep();navigator.vibrate&&navigator.vibrate([200,100,200]);toast(m);if('Notification' in window&&Notification.permission==='granted')try{new Notification('PAPAPACK',{body:m})}catch(x){}}
+let wl;async function wake(on){try{if(on&&'wakeLock' in navigator)wl=await navigator.wakeLock.request('screen');else if(wl){wl.release();wl=null}}catch(x){}}
+const R=id=>db.reactivos.find(r=>r.id===id);
+function dl(name,txt,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([txt],{type}));a.download=name;a.click()}
+/* ---------- Navegación ---------- */
+const TABS=[['scan','📷','Equipo'],['prot','📋','Protocolo'],['form','🧪','Fórmula'],['reg','📝','Registro'],['cfg','⚙️','Ajustes']];
+function go(t){S.tab=t;stopScan();render()}
+function render(){document.documentElement.dataset.theme=db.cfg.dark?'dark':'';
+$('#nav').innerHTML=TABS.map(t=>`<button class="${S.tab==t[0]?'on':''}" onclick="go('${t[0]}')"><span>${t[1]}</span>${t[2]}</button>`).join('');
+$('#eqh').textContent=S.eq?'· '+S.eq.id:'';$('#main').innerHTML=V[S.tab]();if(S.tab=='reg')setTimeout(chart,50)}
+/* ---------- 1. Escaneo QR ---------- */
+let qr;
+function startScan(){if(!window.Html5Qrcode)return toast('Librería QR no disponible (¿sin internet la 1.ª vez?). Usa la entrada manual.');
+qr=new Html5Qrcode('reader');qr.start({facingMode:'environment'},{fps:10,qrbox:240},txt=>{stopScan();beep();navigator.vibrate&&navigator.vibrate(150);loadEq(txt.trim())},()=>{}).catch(x=>toast('No se pudo abrir la cámara: '+x))}
+function stopScan(){if(qr){qr.stop().catch(()=>{});qr=null}}
+function loadEq(id){if(!id)return;let q=db.equipos.find(x=>x.id===id);
+if(!q){if(!confirm(`El equipo "${id}" no existe. ¿Crearlo con un protocolo nuevo?`))return render();
+const pid='PROT-'+String(db.protocolos.length+1).padStart(3,'0');db.protocolos.push({id:pid,equipoId:id,nombre:'Protocolo '+id,pasos:[]});
+q={id,nombre:id,tipo:'reactor',ubicacion:'',protocoloId:pid};db.equipos.push(q);save()}
+S.eq=q;S.prot=db.protocolos.find(p=>p.id===q.protocoloId)||null;S.run=null;toast('✅ Equipo '+id+' cargado');S.tab='prot';render()}
+/* ---------- 2. Protocolo guiado ---------- */
+let tick,phT,notified;
+function startRun(){if(!S.prot||!S.prot.pasos.length)return toast('Agrega pasos primero');
+if('Notification' in window&&Notification.permission==='default')Notification.requestPermission();
+S.run={i:0,done:[],t0:new Date().toISOString()};S.lect=[];wake(true);clearInterval(phT);phT=setInterval(()=>notify('🧪 Revisar pH (cada 15 min)'),900000);stepStart()}
+function stepStart(){const p=S.prot.pasos[S.run.i];S.run.end=Date.now()+(p.duracion||0)*60000;notified=false;
+['temp','rpm','ph'].forEach(k=>{if(p.parametros&&p.parametros[k]!=null)S.cond[k]=p.parametros[k]});
+notify(`Paso ${p.num}: ${p.titulo}`+(p.parametros.temp?` — ${p.parametros.temp} °C, ${p.parametros.rpm} RPM`:''));clearInterval(tick);tick=setInterval(()=>{const el=$('#tm');if(!S.run||!el)return;
+const s=Math.max(0,Math.round((S.run.end-Date.now())/1000));el.textContent=String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
+if(!s&&!notified){notified=true;notify('⏰ Tiempo del paso cumplido')}},1000);render()}
+function nav(d){const n=S.run.i+d;if(n<0)return;if(n>=S.prot.pasos.length){S.run.fin=true;clearInterval(tick);clearInterval(phT);wake(false);return render()}S.run.i=n;stepStart()}
+function mark(){const i=S.run.i;if(!S.run.done.includes(i))S.run.done.push(i);nav(1)}
+function addStep(){const t=prompt('Título del paso');if(!t)return;const d=prompt('Descripción')||'',du=+prompt('Duración (min)','10')||0,tp=prompt('Temperatura °C (vacío = n/a)'),rp=prompt('RPM (0-200)','0'),ph=prompt('pH objetivo (vacío = n/a)'),al=prompt('Advertencias (separadas por ;)')||'';
+S.prot.pasos.push(P(S.prot.pasos.length+1,t,d,du,tp?+tp:null,+rp||0,ph?+ph:null,al.split(';').map(x=>x.trim()).filter(Boolean)));save();render()}
+function delStep(i){if(confirm('¿Eliminar paso?')){S.prot.pasos.splice(i,1);S.prot.pasos.forEach((p,k)=>p.num=k+1);save();render()}}
+function stepCard(p){return `<h3>Paso ${p.num}: ${e(p.titulo)}</h3><p>${e(p.descripcion)}</p><p class="m">⏱ ${p.duracion} min${p.parametros.temp!=null?` · 🌡 ${p.parametros.temp} °C`:''} · 🔄 ${p.parametros.rpm} RPM${p.parametros.ph!=null?` · pH ${p.parametros.ph}`:''}</p>${p.alertas.map(a=>`<div class="al">⚠️ ${e(a)}</div>`).join('')}`}
+/* ---------- 3. Fórmula (cálculo) ---------- */
+function calc(){const b=+S.form.base||0;let rows=S.form.items.map(([id,pct])=>{const r=R(id);if(!r)return null;const g=b*pct/100,q=r.unidad=='mL'&&r.dens?g/r.dens:g;return{r,pct,g,q}}).filter(Boolean);const tot=rows.reduce((a,x)=>a+x.g,0)||1;rows.forEach(x=>x.p=100*x.g/tot);return{rows,tot}}
+function setBase(v){S.form.base=+v;render()}function setPct(i,v){S.form.items[i][1]=+v;render()}
+function addReac(){const id=$('#rs').value;if(!id||S.form.items.some(x=>x[0]==id))return;S.form.items.push([id,R(id).pct]);render()}
+function rmReac(i){S.form.items.splice(i,1);render()}
+function newReac(){const n=prompt('Nombre del reactivo');if(!n)return;const u=prompt('Unidad (g o mL)','g')=='mL'?'mL':'g',d=u=='mL'?+prompt('Densidad g/mL','1')||1:0,pct=+prompt('Cantidad típica (g por 100 g de almidón)','5')||0,f=prompt('Función (plastificante, refuerzo...)')||'otro';
+db.reactivos.push({id:'REAC-'+String(db.reactivos.length+1).padStart(3,'0'),nombre:n,unidad:u,dens:d,funcion:f,pct,rango:'personalizado',precauciones:'Revisar ficha de seguridad (SDS)'});save();render()}
+function setC(k,v){S.cond[k]=v===''?'':+v;const a=$('#ca');if(a)a.innerHTML=alerts()}
+function alerts(){const c=S.cond,a=[];
+if(c.temp>130)a.push(['er','🔥 Temperatura supera el límite del reactor (130 °C)']);else if(c.temp!==''&&(c.temp<60||c.temp>85))a.push(['','🌡 Temperatura fuera del rango típico de proceso (60-85 °C)']);
+if(c.rpm>200||c.rpm<0)a.push(['er','🔄 RPM fuera del rango del equipo (0-200)']);
+if(c.psi>30)a.push(['er','⛔ Presión supera el límite (30 PSI)']);
+if(c.ph!==''&&(c.ph<4.5||c.ph>5.5))a.push(['','🧪 pH fuera del objetivo 4.5-5.5']);
+return a.map(x=>`<div class="al ${x[0]}">${x[1]}</div>`).join('')||'<div class="m">✅ Valores dentro de rango</div>'}
+/* ---------- 5. Registro ---------- */
+function addLect(){S.lect.push({t:new Date().toISOString(),temp:+S.cond.temp,rpm:+S.cond.rpm,ph:+S.cond.ph,psi:+S.cond.psi});toast('Lectura registrada ('+S.lect.length+')');render()}
+let photo=null;function pickPhoto(f){if(!f)return;const r=new FileReader(),im=new Image();r.onload=()=>{im.onload=()=>{const c=document.createElement('canvas'),k=Math.min(1,640/im.width);c.width=im.width*k;c.height=im.height*k;c.getContext('2d').drawImage(im,0,0,c.width,c.height);photo=c.toDataURL('image/jpeg',.6);toast('📷 Foto adjunta')};im.src=r.result};r.readAsDataURL(f)}
+function savePrac(){const {rows}=calc();if(!S.eq)return toast('Primero escanea o selecciona un equipo');const op=$('#op').value||db.cfg.operador;if(!op)return toast('Indica el operador');
+const n=db.practicas.length+1,pr={id:'PRAC-'+String(n).padStart(3,'0'),equipoId:S.eq.id,protocoloId:S.prot?.id||null,fecha:(S.run?.t0||new Date().toISOString()).slice(0,10),inicio:S.run?.t0||new Date().toISOString(),fin:new Date().toISOString(),operador:op,
+formulacion:rows.map(x=>({reactivo:x.r.nombre,cantidad:+x.q.toFixed(2),unidad:x.r.unidad,pct:+x.p.toFixed(1)})),baseAlmidon_g:S.form.base,condiciones:{...S.cond},lecturas:S.lect,observaciones:$('#ob').value,resultado:$('#rs2').value,foto:photo};
+db.practicas.push(pr);save();photo=null;S.lect=[];S.run=null;toast('✅ Práctica '+pr.id+' guardada');render()}
+function filt(){const f=S.fil;return db.practicas.filter(p=>(!f.eq||p.equipoId==f.eq)&&(!f.res||p.resultado==f.res)&&(!f.f||p.fecha==f.f)).reverse()}
+function setF(k,v){S.fil[k]=v;render()}
+const csvc=v=>'"'+String(v??'').replace(/"/g,'""')+'"';
+function csv(list){const h=['id','equipo','fecha','inicio','fin','operador','protocolo','formulacion','temp','rpm','ph','psi','resultado','observaciones'];
+return h.join(',')+'\n'+list.map(p=>[p.id,p.equipoId,p.fecha,p.inicio,p.fin,p.operador,p.protocoloId,p.formulacion.map(f=>`${f.reactivo} ${f.cantidad}${f.unidad}`).join('; '),p.condiciones.temp,p.condiciones.rpm,p.condiciones.ph,p.condiciones.psi,p.resultado,p.observaciones].map(csvc).join(',')).join('\n')}
+function exp(id,fmt){const l=id?db.practicas.filter(p=>p.id==id):db.practicas;fmt=='csv'?dl((id||'historial')+'.csv',csv(l),'text/csv'):dl((id||'historial')+'.json',JSON.stringify(l,null,1),'application/json')}
+let ch;function chart(){const c=$('#cv');if(!c||!window.Chart)return;const p=db.practicas.find(x=>x.id==S.sel)||db.practicas.filter(x=>x.lecturas&&x.lecturas.length).pop();if(!p||!p.lecturas?.length)return;
+const t0=new Date(p.lecturas[0].t);ch&&ch.destroy();ch=new Chart(c,{type:'line',data:{labels:p.lecturas.map(l=>Math.round((new Date(l.t)-t0)/60000)+' min'),datasets:[{label:'T (°C)',data:p.lecturas.map(l=>l.temp),borderColor:'#e11d48'},{label:'pH',data:p.lecturas.map(l=>l.ph),borderColor:'#2563eb',yAxisID:'y2'}]},options:{scales:{y2:{position:'right',grid:{drawOnChartArea:false}}}}})}
+/* ---------- 7. Ajustes ---------- */
+function cfgSet(k,v){db.cfg[k]=v;save();if(k=='dark')render()}
+function addEq(){const id=prompt('ID del equipo (igual al texto del QR)');if(!id||db.equipos.some(x=>x.id==id))return;const pid='PROT-'+String(db.protocolos.length+1).padStart(3,'0');db.protocolos.push({id:pid,equipoId:id,nombre:'Protocolo '+id,pasos:[]});db.equipos.push({id,nombre:prompt('Nombre')||id,tipo:'reactor',ubicacion:prompt('Ubicación')||'',protocoloId:pid});save();render()}
+function delEq(id){if(confirm('¿Eliminar '+id+'?')){db.equipos=db.equipos.filter(x=>x.id!=id);save();render()}}
+function backup(){dl('papapack-backup.json',JSON.stringify(db),'application/json')}
+function restore(f){if(!f)return;f.text().then(t=>{try{const d=JSON.parse(t);if(!d.equipos||!d.practicas)throw 0;db=d;save();toast('Backup importado');render()}catch(x){toast('Archivo inválido')}})}
+/* ---------- Vistas ---------- */
+const V={
+scan:()=>`<div class="card"><button style="font-size:20px;min-height:64px" onclick="startScan()">📷 Escanear Equipo</button><div id="reader" style="width:100%"></div><button class="s" onclick="stopScan();render()">Detener cámara</button></div>
+<div class="card"><h3>Entrada manual</h3><select id="man">${db.equipos.map(q=>`<option>${e(q.id)}</option>`).join('')}</select><button onclick="loadEq($('#man').value)">Cargar equipo</button><small>Los QR deben contener solo el ID, p. ej. REACTOR-001.</small></div>`,
+prot:()=>{if(!S.eq)return'<div class="card">Escanea un equipo primero.</div>';const p=S.prot,r=S.run;if(!p)return'<div class="card">Sin protocolo.</div>';
+if(!r)return`<div class="card"><h3>${e(p.nombre)}</h3><small>${e(S.eq.nombre)} · ${p.pasos.length} pasos</small><button onclick="startRun()">▶️ Iniciar modo guiado</button><button class="s" onclick="addStep()">➕ Agregar paso</button></div>`+p.pasos.map((s,i)=>`<div class="card">${stepCard(s)}<button class="s" onclick="delStep(${i})">🗑 Eliminar</button></div>`).join('');
+const n=p.pasos.length,pct=Math.round(100*r.done.length/n);
+if(r.fin)return`<div class="card"><h3>✅ Protocolo finalizado</h3><div class="bar"><i style="width:${pct}%"></i></div><p>${r.done.length}/${n} pasos completados.</p><button onclick="go('form')">Revisar fórmula y condiciones</button><button onclick="go('reg')">📝 Registrar práctica</button></div>`;
+const s=p.pasos[r.i];return`<div class="card"><small>Paso ${r.i+1} de ${n} · ${pct}% completado</small><div class="bar"><i style="width:${pct}%"></i></div></div><div class="card">${stepCard(s)}<div class="big ok" id="tm">--:--</div></div>
+<div class="card"><div class="r"><button class="s" onclick="nav(-1)">⬅ Anterior</button><button class="s" onclick="nav(1)">Siguiente ➡</button></div><button onclick="mark()">✔ Marcar como completado</button><button class="s" onclick="addLect()">📍 Registrar lectura (T/RPM/pH)</button><button class="s" onclick="go('form')">🧪 Ver fórmula y condiciones</button></div>`},
+form:()=>{const {rows,tot}=calc(),c=S.cond;return`<div class="card"><h3>Formulación</h3><label>Masa de almidón base (g)</label><input type="number" inputmode="decimal" value="${S.form.base}" onchange="setBase(this.value)">
+<div style="overflow-x:auto"><table><tr><th>Reactivo</th><th>g/100 g</th><th>Cant.</th><th>%</th><th></th></tr>${rows.map((x,i)=>`<tr><td>${e(x.r.nombre)}<br><small>${e(x.r.funcion)}</small></td><td><input type="number" style="width:80px" value="${x.pct}" onchange="setPct(${i},this.value)"></td><td><b>${x.q.toFixed(1)}</b> ${x.r.unidad}</td><td>${x.p.toFixed(1)}</td><td><a onclick="rmReac(${i})">✖</a></td></tr>`).join('')}</table></div><small>Masa total: ${tot.toFixed(1)} g · % calculado sobre masa</small>
+${rows.filter(x=>x.r.precauciones&&x.r.precauciones!='—').map(x=>`<div class="al">⚠️ ${e(x.r.nombre)}: ${e(x.r.precauciones)}</div>`).join('')}
+<select id="rs">${db.reactivos.map(r=>`<option value="${r.id}">${e(r.nombre)} (${e(r.rango)})</option>`).join('')}</select><div class="r"><button onclick="addReac()">➕ Agregar</button><button class="s" onclick="newReac()">✨ Personalizado</button></div></div>
+<div class="card"><h3>Condiciones</h3><small>Recomendado: 63 °C (síntesis) / 80 °C (gelatinización) · pH 4.5-5.5 · ${S.form.items.some(x=>x[0]=='REAC-009')?'150':'100'} RPM (más con nanocelulosa)</small>
+<div class="g2"><div><label>T (°C)</label><input type="number" inputmode="decimal" value="${c.temp}" oninput="setC('temp',this.value)"></div><div><label>RPM</label><input type="number" value="${c.rpm}" oninput="setC('rpm',this.value)"></div><div><label>pH</label><input type="number" step=".1" value="${c.ph}" oninput="setC('ph',this.value)"></div><div><label>Presión (PSI)</label><input type="number" value="${c.psi}" oninput="setC('psi',this.value)"></div></div><div id="ca">${alerts()}</div>
+<div class="al er">EPP obligatorio: bata, guantes, gafas. Límites del reactor: 130 °C · 30 PSI · 0-200 RPM. Prohibido: solventes inflamables no autorizados.</div></div>`},
+reg:()=>{const l=filt();return`<div class="card"><h3>Registrar práctica</h3><small>Equipo: ${S.eq?e(S.eq.id):'— (escanea uno)'} · Lecturas: ${S.lect.length}</small>
+<input id="op" placeholder="Operador" value="${e(db.cfg.operador)}"><select id="rs2"><option value="exitoso">✅ Exitoso</option><option value="parcial">🟡 Parcial</option><option value="fallo">❌ Fallo</option></select><textarea id="ob" rows="3" placeholder="Observaciones"></textarea>
+<input type="file" accept="image/*" capture="environment" onchange="pickPhoto(this.files[0])"><button onclick="savePrac()">💾 Guardar práctica</button></div>
+<div class="card"><h3>Historial</h3><div class="g2"><select onchange="setF('eq',this.value)"><option value="">Todos los equipos</option>${db.equipos.map(q=>`<option ${S.fil.eq==q.id?'selected':''}>${e(q.id)}</option>`).join('')}</select><select onchange="setF('res',this.value)"><option value="">Todo resultado</option>${['exitoso','parcial','fallo'].map(x=>`<option ${S.fil.res==x?'selected':''}>${x}</option>`).join('')}</select></div><input type="date" value="${S.fil.f}" onchange="setF('f',this.value)">
+<div class="r"><button class="s" onclick="exp(null,'csv')">CSV</button><button class="s" onclick="exp(null,'json')">JSON</button></div></div>
+${l.map(p=>`<div class="card"><b>${p.id}</b> · ${p.equipoId} · ${p.fecha}<br><small>${e(p.operador)} · ${p.resultado} · ${p.condiciones.temp} °C, ${p.condiciones.rpm} RPM, pH ${p.condiciones.ph}</small><br><small>${p.formulacion.map(f=>`${e(f.reactivo)} ${f.cantidad}${f.unidad}`).join(' · ')}</small>${p.observaciones?`<p>${e(p.observaciones)}</p>`:''}${p.foto?`<img src="${p.foto}" style="width:100%;border-radius:10px">`:''}
+<div class="r"><button class="s" onclick="exp('${p.id}','csv')">CSV</button><button class="s" onclick="exp('${p.id}','json')">JSON</button><button class="s" onclick="S.sel='${p.id}';render()">📈</button></div></div>`).join('')||'<div class="card m">Sin prácticas.</div>'}
+<div class="card"><h3>Tendencia T / pH</h3><canvas id="cv" height="200"></canvas><small>Usa 📍 durante el protocolo para guardar lecturas y 📈 para verlas.</small></div>`},
+cfg:()=>`<div class="card"><h3>Operador</h3><input placeholder="Nombre" value="${e(db.cfg.operador)}" onchange="cfgSet('operador',this.value)"><input placeholder="Rol" value="${e(db.cfg.rol)}" onchange="cfgSet('rol',this.value)"><button class="s" onclick="cfgSet('dark',!db.cfg.dark)">🌓 Modo oscuro/claro</button></div>
+<div class="card"><h3>Equipos</h3>${db.equipos.map(q=>`<div class="r" style="align-items:center"><span>${e(q.id)}<br><small>${e(q.nombre)} · ${e(q.ubicacion)}</small></span><button class="s" style="flex:0 0 56px" onclick="delEq('${q.id}')">🗑</button></div>`).join('')}<button onclick="addEq()">➕ Agregar equipo</button></div>
+<div class="card"><h3>Backup</h3><button onclick="backup()">⬇️ Exportar base de datos</button><label class="m">Importar backup (.json)</label><input type="file" accept=".json" onchange="restore(this.files[0])"></div>`};
+/* ---------- PWA ---------- */
+(function(){const ic="data:image/svg+xml,"+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="90" fill="#0b6e4f"/><text x="256" y="350" font-size="300" text-anchor="middle">🧪</text></svg>');
+const m={name:'PAPAPACK Lab Assistant',short_name:'PAPAPACK',start_url:location.pathname,scope:location.pathname.replace(/[^/]*$/,''),display:'standalone',background_color:'#0b6e4f',theme_color:'#0b6e4f',icons:[{src:ic,sizes:'any',type:'image/svg+xml',purpose:'any'}]};
+const l=document.createElement('link');l.rel='manifest';l.href=URL.createObjectURL(new Blob([JSON.stringify(m)],{type:'application/manifest+json'}));document.head.appendChild(l);
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{})})();
+(async()=>{db=await load();if(!db){db=SEED();save()}render()})();
+</script></body></html>
