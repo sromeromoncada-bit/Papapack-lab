@@ -71,15 +71,54 @@ function render(){document.documentElement.dataset.theme=db.cfg.dark?'dark':'';
 $('#nav').innerHTML=TABS.map(t=>`<button class="${S.tab==t[0]?'on':''}" onclick="go('${t[0]}')"><span>${t[1]}</span>${t[2]}</button>`).join('');
 $('#eqh').textContent=S.eq?'· '+S.eq.id:'';$('#main').innerHTML=V[S.tab]();if(S.tab=='reg')setTimeout(chart,50)}
 /* ---------- 1. Escaneo QR ---------- */
-let qr;
-function startScan(){if(!window.Html5Qrcode)return toast('Librería QR no disponible (¿sin internet la 1.ª vez?). Usa la entrada manual.');
-qr=new Html5Qrcode('reader');qr.start({facingMode:'environment'},{fps:10,qrbox:240},txt=>{stopScan();beep();navigator.vibrate&&navigator.vibrate(150);loadEq(txt.trim())},()=>{}).catch(x=>toast('No se pudo abrir la cámara: '+x))}
-function stopScan(){if(qr){qr.stop().catch(()=>{});qr=null}}
-function loadEq(id){if(!id)return;let q=db.equipos.find(x=>x.id===id);
-if(!q){if(!confirm(`El equipo "${id}" no existe. ¿Crearlo con un protocolo nuevo?`))return render();
-const pid='PROT-'+String(db.protocolos.length+1).padStart(3,'0');db.protocolos.push({id:pid,equipoId:id,nombre:'Protocolo '+id,pasos:[]});
-q={id,nombre:id,tipo:'reactor',ubicacion:'',protocoloId:pid};db.equipos.push(q);save()}
-S.eq=q;S.prot=db.protocolos.find(p=>p.id===q.protocoloId)||null;S.run=null;toast('✅ Equipo '+id+' cargado');S.tab='prot';render()}
+let qr,torchOn=false;
+function startScan(){
+  if(!window.Html5Qrcode)return toast('Librería QR no disponible (¿sin internet la 1.ª vez?). Usa la entrada manual.');
+  if(qr)return;
+  const F=Html5QrcodeSupportedFormats;
+  qr=new Html5Qrcode('reader',{
+    formatsToSupport:[F.QR_CODE,F.CODE_128,F.EAN_13,F.CODE_39,F.ITF,F.CODABAR],
+    experimentalFeatures:{useBarCodeDetectorIfSupported:true},
+    verbose:false
+  });
+  qr.start(
+    {facingMode:'environment',width:{ideal:1280},height:{ideal:720}},
+    {fps:10,qrbox:(w,h)=>({width:Math.min(300,w-20),height:150})},
+    txt=>{
+      if(!qr)return;
+      stopScan();beep();navigator.vibrate&&navigator.vibrate(150);
+      loadEq(String(txt).trim());
+    },
+    ()=>{}
+  ).catch(x=>{qr=null;toast('No se pudo abrir la cámara: '+x)});
+}
+function stopScan(){if(qr){qr.stop().catch(()=>{});qr=null}torchOn=false}
+async function toggleTorch(){
+  if(!qr)return toast('Primero pulsa "Escanear Equipo"');
+  try{
+    const t=qr.getRunningTrackCameraCapabilities().torchFeature();
+    if(!t.isSupported())return toast('Este celular/navegador no permite usar la linterna');
+    await t.apply(!torchOn);torchOn=!torchOn;
+  }catch(x){
+    try{await qr.applyVideoConstraints({advanced:[{torch:!torchOn}]});torchOn=!torchOn}
+    catch(y){return toast('Linterna no disponible')}
+  }
+  const b=$('#tb');if(b)b.textContent=torchOn?'🔦 Apagar linterna':'🔦 Linterna';
+}
+function loadEq(id){
+  id=String(id||'').trim();if(!id)return;
+  let q=db.equipos.find(x=>String(x.id)===id),nuevo=false;
+  if(!q){
+    nuevo=true;
+    const pid='PROT-'+String(db.protocolos.length+1).padStart(3,'0');
+    db.protocolos.push({id:pid,equipoId:id,nombre:'Protocolo '+id,pasos:[]});
+    q={id,nombre:'Activo '+id,tipo:'reactor',ubicacion:'',protocoloId:pid};
+    db.equipos.push(q);
+    save();
+  }
+  S.eq=q;S.prot=db.protocolos.find(p=>p.id===q.protocoloId)||null;S.run=null;S.tab='prot';render();
+  toast(nuevo?`✅ Equipo ${id} registrado automáticamente. Configura su protocolo`:`✅ Equipo ${id} cargado`);
+}
 /* ---------- 2. Protocolo guiado ---------- */
 let tick,phT,notified;
 function startRun(){if(!S.prot||!S.prot.pasos.length)return toast('Agrega pasos primero');
@@ -133,8 +172,8 @@ function backup(){dl('papapack-backup.json',JSON.stringify(db),'application/json
 function restore(f){if(!f)return;f.text().then(t=>{try{const d=JSON.parse(t);if(!d.equipos||!d.practicas)throw 0;db=d;save();toast('Backup importado');render()}catch(x){toast('Archivo inválido')}})}
 /* ---------- Vistas ---------- */
 const V={
-scan:()=>`<div class="card"><button style="font-size:20px;min-height:64px" onclick="startScan()">📷 Escanear Equipo</button><div id="reader" style="width:100%"></div><button class="s" onclick="stopScan();render()">Detener cámara</button></div>
-<div class="card"><h3>Entrada manual</h3><select id="man">${db.equipos.map(q=>`<option>${e(q.id)}</option>`).join('')}</select><button onclick="loadEq($('#man').value)">Cargar equipo</button><small>Los QR deben contener solo el ID, p. ej. REACTOR-001.</small></div>`,
+scan:()=>`<div class="card"><button style="font-size:20px;min-height:64px" onclick="startScan()">📷 Escanear Equipo</button><div id="reader" style="width:100%"></div><div class="r"><button id="tb" class="s" onclick="toggleTorch()">🔦 Linterna</button><button class="s" onclick="stopScan();render()">Detener cámara</button></div></div>
+<div class="card"><h3>Entrada manual</h3><select id="man">${db.equipos.map(q=>`<option>${e(q.id)}</option>`).join('')}</select><button onclick="loadEq($('#man').value)">Cargar equipo</button><small>Acepta QR y códigos de barras (p. ej. 60757).</small></div>`,
 prot:()=>{if(!S.eq)return'<div class="card">Escanea un equipo primero.</div>';const p=S.prot,r=S.run;if(!p)return'<div class="card">Sin protocolo.</div>';
 if(!r)return`<div class="card"><h3>${e(p.nombre)}</h3><small>${e(S.eq.nombre)} · ${p.pasos.length} pasos</small><button onclick="startRun()">▶️ Iniciar modo guiado</button><button class="s" onclick="addStep()">➕ Agregar paso</button></div>`+p.pasos.map((s,i)=>`<div class="card">${stepCard(s)}<button class="s" onclick="delStep(${i})">🗑 Eliminar</button></div>`).join('');
 const n=p.pasos.length,pct=Math.round(100*r.done.length/n);
